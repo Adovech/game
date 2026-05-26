@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тобнутий Сапер Next Level</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-color: #1a1a2e;
+            --cell-color: #16213e;
+            --cell-hover: #0f3460;
+            --cell-open: #e94560;
+            --text-color: #ffffff;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            user-select: none;
+        }
+        h1 { margin-bottom: 10px; font-size: 24px; text-shadow: 0 0 10px #e94560; }
+        #status { margin-bottom: 15px; font-size: 18px; font-weight: bold; }
+        #grid {
+            display: grid;
+            gap: 4px;
+            background: #0f3460;
+            padding: 6px;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        .cell {
+            width: 40px;
+            height: 40px;
+            background-color: var(--cell-color);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .cell:hover { background-color: var(--cell-hover); transform: scale(1.05); }
+        .cell.revealed { background-color: #ffffff; color: #1a1a2e; cursor: default; transform: none; }
+        .cell.mine { background-color: #e94560; animation: shake 0.3s ease-in-out; }
+        .cell.flagged { background-color: #f0a500; }
+        
+        .btn {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 4px 10px rgba(233, 69, 96, 0.4);
+        }
+        .btn:hover { background: #ff5773; }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-4px); }
+            75% { transform: translateX(4px); }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>💣 SAPER NEXT LEVEL 💣</h1>
+    <div id="status">Мін залишилось: <span id="mine-count">10</span></div>
+    <div id="grid"></div>
+    <button class="btn" onclick="initGame()">Перезапустити</button>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Розгортаємо на весь екран телеграма
+
+        const rows = 9;
+        const cols = 9;
+        const minesCount = 10;
+        let board = [];
+        let revealedCount = 0;
+        let gameOver = false;
+
+        function initGame() {
+            gameOver = false;
+            revealedCount = 0;
+            document.getElementById('status').innerHTML = `Мін залишилось: <span id="mine-count">${minesCount}</span>`;
+            
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            grid.style.gridTemplateColumns = `repeat(${cols}, 40px)`;
+
+            // Створення порожньої матриці
+            board = Array(rows).fill().map(() => Array(cols).fill().map(() => ({
+                isMine: false, isRevealed: false, isFlagged: false, count: 0
+            })));
+
+            // Розстановка мін
+            let minesPlaced = 0;
+            while (minesPlaced < minesCount) {
+                let r = Math.floor(Math.random() * rows);
+                let c = Math.floor(Math.random() * cols);
+                if (!board[r][c].isMine) {
+                    board[r][c].isMine = true;
+                    minesPlaced++;
+                }
+            }
+
+            // Рахуємо цифри навколо мін
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    if (board[r][c].isMine) continue;
+                    let count = 0;
+                    for (let i = -1; i <= 1; i++) {
+                        for (let j = -1; j <= 1; j++) {
+                            if (board[r+i] && board[r+i][c+j] && board[r+i][c+j].isMine) count++;
+                        }
+                    }
+                    board[r][c].count = count;
+                }
+            }
+
+            // Рендеринг клітинок
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    
+                    // Звичайний клік (відкрити)
+                    cell.addEventListener('click', () => revealCell(r, c));
+                    
+                    // Довгий клік / Права кнопка (прапорець)
+                    cell.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        toggleFlag(r, c);
+                    });
+
+                    grid.appendChild(cell);
+                }
+            }
+        }
+
+        function revealCell(r, c) {
+            if (gameOver || board[r][c].isRevealed || board[r][c].isFlagged) return;
+
+            const cellEl = document.querySelector(`[data-row="${r}"][data-col="${c}"]`);
+            board[r][c].isRevealed = true;
+
+            if (board[r][c].isMine) {
+                cellEl.classList.add('mine');
+                cellEl.innerHTML = '💥';
+                endGame(false);
+                return;
+            }
+
+            cellEl.classList.add('revealed');
+            revealedCount++;
+
+            if (board[r][c].count > 0) {
+                cellEl.innerHTML = board[r][c].count;
+                // Кольори для цифр
+                const colors = ['#1abc9c', '#3498db', '#e67e22', '#e74c3c', '#9b59b6'];
+                cellEl.style.color = colors[board[r][c].count - 1] || '#000';
+            } else {
+                // Якщо 0, відкриваємо сусідів (рекурсія)
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        if (board[r+i] && board[r+i][c+j]) revealCell(r+i, c+j);
+                    }
+                }
+            }
+
+            if (revealedCount === (rows * cols) - minesCount) {
+                endGame(true);
+            }
+        }
+
+        function toggleFlag(r, c) {
+            if (gameOver || board[r][c].isRevealed) return;
+            const cellEl = document.querySelector(`[data-row="${r}"][data-col="${c}"]`);
+            
+            board[r][c].isFlagged = !board[r][c].isFlagged;
+            if (board[r][c].isFlagged) {
+                cellEl.classList.add('flagged');
+                cellEl.innerHTML = '🚩';
+            } else {
+                cellEl.classList.remove('flagged');
+                cellEl.innerHTML = '';
+            }
+        }
+
+        function endGame(isWin) {
+            gameOver = true;
+            if (isWin) {
+                document.getElementById('status').innerHTML = '🎉 ТИ ВИГРАВ! КРАСАВА! 🎉';
+                tg.HapticFeedback.notificationOccurred('success'); // Вібрація в ТГ при перемозі
+            } else {
+                document.getElementById('status').innerHTML = '💀 БУМ! Гра закінчена. 💀';
+                tg.HapticFeedback.notificationOccurred('error'); // Вібрація при вибуху
+                // Показуємо всі інші міни
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        if (board[r][c].isMine && !board[r][c].isRevealed) {
+                            const cellEl = document.querySelector(`[data-row="${r}"][data-col="${c}"]`);
+                            cellEl.innerHTML = '💣';
+                        }
+                    }
+                }
+            }
+        }
+
+        initGame();
+    </script>
+</body>
+</html>
